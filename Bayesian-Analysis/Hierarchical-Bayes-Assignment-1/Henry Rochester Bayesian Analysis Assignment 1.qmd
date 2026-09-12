@@ -1,0 +1,2243 @@
+---
+format: pdf
+editor: visual
+---
+
+\begin{titlepage}
+\centering
+\vspace*{\fill}
+
+{\LARGE\bfseries STA304XS Bayesian Analysis\par}
+
+\vspace{0.5cm}
+
+{\Large\bfseries Assignment 1: Hierarchical Bayesian Modelling\par}
+
+\vspace{1.5cm}
+
+{\large Henry Edward Fairfax Rochester\par}
+
+\vspace{0.25cm}
+
+{\normalsize RCHHEN004\par}
+
+\vspace{0.5cm}
+
+{\normalsize Department of Statistical Sciences\par}
+{\normalsize University of Cape Town\par}
+
+\vspace{1.5cm}
+
+{\large 12th of September 2026\par}
+
+\vspace*{\fill}
+\end{titlepage}
+
+```{r}
+#| include: false
+load("STA3043S_Assignment1_Data.RData")
+dat = machineData$RCHHEN004
+```
+
+# Question 1: Exploratory Data Analysis 
+
+```{r}
+#| include: false
+attach(dat)
+dat # here we skim through the data to see total amount of data and data structure. Machines 1,2,3,4 seem to have fewer bottles dispensed, than machine 5,6 and 7
+
+# we want the first few rows and last few rows as well: 
+head(dat) 
+tail(dat)
+summary(dat)
+table(Machine)
+```
+
+```{r}
+#| include: false
+
+# here we find the mean per machine: 
+mean_per_machine = aggregate(Y~Machine, data = dat, mean)
+```
+
+```{r}
+#| echo: False
+#| fig-cap: "Bottle Deviations by Machine. Dashed horizontal line represents target deviation from zero "
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-align: center
+boxplot(
+  Y ~ Machine,
+  xlab = "Machine",
+  ylab = "Deviation from 500ml target (ml)",
+  main = "Boxplot for Bottle Deviations by Machine",
+  col = "lightblue",
+  border = "navy"
+)
+
+abline(h = 0,lty = 2,
+  col = "forestgreen",
+  lwd = 2
+)
+```
+
+```{r}
+#| include: false
+standard_deviation_per_machine = aggregate(Y~Machine, data=dat, sd)
+
+# we create a table for summary of the mean and std per machine: 
+
+table_summary = data.frame(
+  Machine_number = mean_per_machine$Machine,
+  num_bottles_per_machine = as.numeric(table(Machine)),
+  mean = mean_per_machine$Y,
+  standard_deviation = standard_deviation_per_machine$Y
+)
+```
+
+```{r}
+#| echo: false
+
+knitr::kable(
+  table_summary,
+  digits = 3,
+  col.names = c("Machine", "Number of Bottles", 
+                "Mean deviation (ml)", "Standard deviation (ml)"),
+  caption = "Summary Statistics for Bottle Deviations by Machine"
+)
+```
+
+Initially, we see that we have 7 machines with 153 observations of bottles filled in total. We note that the number of bottles per machine is not balanced. Specifically, we note that machines 1,2,3,4 account for only 43 out of 153 observations, which is approximately 28% of the total number of bottles, while machines 5,6 and 7 account for the remaining 72% of observations. That is to say that the sample sizes per machine range considerably from 5 bottles observed for Machine 1 to 50 observations observed for Machine 7. 
+
+We note that this is important when interpreting results and conclusions from this raw data, since the sample means for machines with relatively fewer observations are less precise than the machines with larger sample sizes. Hence, although the data suggests a tendency for certain machines to overfill/underfill, we should be cautious while interpreting these results to account for the unbalanced observations across machines.
+
+From Table 1 above, we see that Machines 2 and 3 respectively tend to overfill the most, with sample means of 2.10ml and 2.05ml respectively. Moreover, machine 4 tends to underfill to most, with mean deviation of approximately -1.09ml. However, it is important to note that machines 2, 3, and 4 only have 8, 12 and 18 observations recorded, respectively, which is much lower compared than machines 5, 6 and 7, and thus these estimates are based on much less information. 
+
+Referring to the boxplot above, ideally, we would want all the deviations to be tightly centred around the 0 line, corresponding to the desired 500ml target. However, we note that machines 2 and 3 have more than half their distribution shifted above the 0 line, indicative of a tendency towards overfilling. Whereas machine 4 is shifted below the 0 line, suggesting it has tendency towards underfilling. This supports our sample mean comments above. Moreover, we see that machines 5,6 and 7 are more centred around 0, although there is some variation present, with machine 6 containing a low outlier. 
+
+We see that machine 7 has the largest range, from substantial underfilling (-5ml) to large overfilling (4ml), but it is important to note that machine 7 has the largest sample size, and thus it is difficult to reliably compare the range with machines that have relatively fewer sample sizes. Finally, we note that machine 1 has the largest standard deviation of 2.188, but recall that machine 1 only has 5 observations, and thus machine 1's variability should also be interpreted cautiously. 
+
+Hence, from our exploratory data analysis, we conclude that there does seem to be some variation between machine mean deviations, and variability among the machines. However, because we have substantially different sample sizes per machine, the per-machine sample means do not have the same precision. Thus, it is quite difficult to make conclusions from this raw data alone about which machine is calibrated most poorly. Hence, this is why we may motivate partial pooling in the Hierarchical Bayes setup. That is to say, information from the population distribution can help stabilise the estimates from the machines with fewer observations, in order to help us with our decision making. 
+
+# Question 2
+
+### (a)
+
+For machine $j$, we are given that: 
+
+$$
+\bar Y_j
+=
+\frac{1}{n_j}\sum_{i=1}^{n_j} Y_{ij}.
+$$
+
+Moreover, we know that: 
+
+$$
+Y_{ij}\mid \theta_j
+\overset{\text{ind}}{\sim}
+N(\theta_j,\sigma^2),
+$$
+
+and
+
+$$
+\theta_j\mid\mu
+\overset{\text{iid}}{\sim}
+N(\mu,\tau^2).
+$$
+
+Since $\bar Y_j$ is the mean of $n_j$ independent Normal random
+variables, it follows that we have that: 
+
+$$
+\bar Y_j\mid\theta_j
+\sim
+N\left(
+\theta_j,
+\frac{\sigma^2}{n_j}
+\right).
+$$
+
+Hence, finding the marginal by integrating over $\theta_j$: 
+
+$$
+f(\bar y_j\mid\mu)
+=
+\int_{-\infty}^{\infty}
+f(\bar y_j\mid\theta_j)
+f(\theta_j\mid\mu)
+\,d\theta_j.
+$$
+
+It follows that: 
+
+$$
+f(\bar y_j\mid\mu)
+\propto
+\int_{-\infty}^{\infty}
+\exp\left\{
+-\frac{n_j}{2\sigma^2}
+(\bar y_j-\theta_j)^2
+-
+\frac{1}{2\tau^2}
+(\theta_j-\mu)^2
+\right\}
+\,d\theta_j.
+$$
+
+Dropping the subscript $j$ temporarily for simplicity, we consider the
+exponent: 
+
+$$
+-\frac{n}{2\sigma^2}(\bar y-\theta)^2
+-
+\frac{1}{2\tau^2}(\theta-\mu)^2.
+$$
+
+Expanding,
+
+$$
+-\frac{n}{2\sigma^2}
+\left(
+\bar y^2-2\bar y\theta+\theta^2
+\right)
+-
+\frac{1}{2\tau^2}
+\left(
+\theta^2-2\theta\mu+\mu^2
+\right).
+$$
+
+Thus,
+
+$$
+=
+-\frac{n}{2\sigma^2}\bar y^2
++
+\frac{n\bar y}{\sigma^2}\theta
+-
+\frac{n}{2\sigma^2}\theta^2
+-
+\frac{1}{2\tau^2}\theta^2
++
+\frac{\mu}{\tau^2}\theta
+-
+\frac{\mu^2}{2\tau^2}.
+$$
+
+Collecting terms in $\theta$,
+
+$$
+=
+-\frac12
+\left(
+\frac{n}{\sigma^2}
++
+\frac{1}{\tau^2}
+\right)\theta^2
++
+\left(
+\frac{n\bar y}{\sigma^2}
++
+\frac{\mu}{\tau^2}
+\right)\theta
+-
+\frac{n}{2\sigma^2}\bar y^2
+-
+\frac{\mu^2}{2\tau^2}.
+$$
+
+Let
+
+$$
+A
+=
+\frac{n}{\sigma^2}
++
+\frac{1}{\tau^2},
+$$
+
+and
+
+$$
+B
+=
+\frac{n\bar y}{\sigma^2}
++
+\frac{\mu}{\tau^2}.
+$$
+
+Then the terms involving $\theta$ may be written as: 
+
+$$
+-\frac{A}{2}\theta^2+B\theta.
+$$
+
+Factoring out $-A/2$,
+
+$$
+-\frac{A}{2}
+\left[
+\theta^2-\frac{2B}{A}\theta
+\right].
+$$
+
+Completing the square in terms of $\theta$: 
+
+$$
+\theta^2-\frac{2B}{A}\theta
+=
+\left(
+\theta-\frac{B}{A}
+\right)^2
+-
+\left(
+\frac{B}{A}
+\right)^2.
+$$
+
+Hence,
+
+$$
+-\frac{A}{2}\theta^2+B\theta
+=
+-\frac{A}{2}
+\left(
+\theta-\frac{B}{A}
+\right)^2
++
+\frac{B^2}{2A}.
+$$
+
+Therefore,
+
+$$
+f(\bar y\mid\mu)
+\propto
+\int_{-\infty}^{\infty}
+\exp\left\{
+-\frac{A}{2}
+\left(
+\theta-\frac{B}{A}
+\right)^2
+\right\}
+\,d\theta
+\;
+\exp\left\{
+\frac{B^2}{2A}
+-
+\frac{n}{2\sigma^2}\bar y^2
+-
+\frac{\mu^2}{2\tau^2}
+\right\}.
+$$
+
+Now,
+
+$$
+\int_{-\infty}^{\infty}
+\sqrt{\frac{A}{2\pi}}
+\exp\left\{
+-\frac{A}{2}
+\left(
+\theta-\frac{B}{A}
+\right)^2
+\right\}
+\,d\theta
+=
+1,
+$$
+
+since this is the kernel of a Normal distribution with mean $B/A$
+and variance $1/A$.
+
+Hence, dropping the constants that do not depend on $\bar y$,
+
+$$
+f(\bar y\mid\mu)
+\propto
+\exp\left\{
+\frac{B^2}{2A}
+-
+\frac{n}{2\sigma^2}\bar y^2
+-
+\frac{\mu^2}{2\tau^2}
+\right\}.
+$$
+
+We now simplify the exponent. Since
+
+$$
+A
+=
+\frac{n\tau^2+\sigma^2}{\sigma^2\tau^2},
+$$
+
+and
+
+$$
+B
+=
+\frac{n\bar y\tau^2+\mu\sigma^2}
+{\sigma^2\tau^2},
+$$
+
+we have
+
+$$
+\frac{B^2}{2A}
+=
+\frac{
+(n\bar y\tau^2+\mu\sigma^2)^2
+}{
+2\sigma^2\tau^2(n\tau^2+\sigma^2)
+}.
+$$
+
+Thus,
+
+$$
+\frac{B^2}{2A}
+-
+\frac{n}{2\sigma^2}\bar y^2
+-
+\frac{\mu^2}{2\tau^2}
+$$
+
+becomes
+
+$$
+\frac{
+(n\bar y\tau^2+\mu\sigma^2)^2
+-
+n\bar y^2\tau^2(n\tau^2+\sigma^2)
+-
+\mu^2\sigma^2(n\tau^2+\sigma^2)
+}{
+2\sigma^2\tau^2(n\tau^2+\sigma^2)
+}.
+$$
+
+Expanding the numerator,
+
+$$
+=
+\frac{
+n^2\bar y^2\tau^4
++
+2n\bar y\mu\sigma^2\tau^2
++
+\mu^2\sigma^4
+-
+n^2\bar y^2\tau^4
+-
+n\bar y^2\sigma^2\tau^2
+-
+n\mu^2\sigma^2\tau^2
+-
+\mu^2\sigma^4
+}{
+2\sigma^2\tau^2(n\tau^2+\sigma^2)
+}.
+$$
+
+After cancellation,
+
+$$
+=
+\frac{
+n\sigma^2\tau^2
+\left(
+2\bar y\mu-\bar y^2-\mu^2
+\right)
+}{
+2\sigma^2\tau^2(n\tau^2+\sigma^2)
+}.
+$$
+
+Since
+
+$$
+2\bar y\mu-\bar y^2-\mu^2
+=
+-(\bar y-\mu)^2,
+$$
+
+we obtain
+
+$$
+=
+-\frac{
+n(\bar y-\mu)^2
+}{
+2(n\tau^2+\sigma^2)
+}.
+$$
+
+Equivalently,
+
+$$
+=
+-\frac{
+(\bar y-\mu)^2
+}{
+2\left(
+\tau^2+\frac{\sigma^2}{n}
+\right)
+}.
+$$
+
+Hence,
+
+$$
+f(\bar y\mid\mu)
+\propto
+\exp\left\{
+-\frac{
+(\bar y-\mu)^2
+}{
+2\left(
+\tau^2+\frac{\sigma^2}{n}
+\right)
+}
+\right\}.
+$$
+
+This is the kernel of a Normal distribution. Adding back the subscript $j$, we have that: 
+
+$$
+\boxed{
+\bar Y_j\mid\mu
+\sim
+N\left(
+\mu,
+\tau^2+\frac{\sigma^2}{n_j}
+\right)
+}.
+$$
+
+For the variance, it consists of two components. The term: 
+
+$$
+\frac{\sigma^2}{n_j}
+$$
+
+is the sampling variance of each machine's sample mean
+$\bar Y_j$ conditional on $\theta_j$, while: 
+
+$$
+\tau^2
+$$
+
+is the variance that exists between machines arising from the distribution of
+$\theta_j$ around the population mean $\mu$. Therefore, together we have that: 
+
+$$
+\operatorname{Var}(\bar Y_j\mid\mu)
+=
+\tau^2+\frac{\sigma^2}{n_j}.
+$$
+
+### (b)
+
+From part (a), we have
+
+$$
+\bar Y_j \mid \mu \sim N(\mu,V_j),
+$$
+
+where
+
+$$
+V_j = \tau^2 + \frac{\sigma^2}{n_j}.
+$$
+
+Hence,
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\prod_{j=1}^J f(\bar y_j\mid\mu)\pi(\mu).
+$$
+
+Using the Normal density for $\bar Y_j\mid\mu$ and the Laplace prior for $\mu$,
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\prod_{j=1}^J
+\frac{1}{\sqrt{2\pi V_j}}
+\exp\left\{
+-\frac{(\bar y_j-\mu)^2}{2V_j}
+\right\}
+\cdot
+\frac{c}{2}\exp\{-c|\mu|\}.
+$$
+
+Dropping terms which do not depend on $\mu$, we obtain
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\exp\left\{
+-\frac{1}{2}
+\sum_{j=1}^J
+\frac{(\bar y_j-\mu)^2}{V_j}
+\right\}
+\exp\{-c|\mu|\}.
+$$
+
+Equivalently,
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\exp\left\{
+-\frac{1}{2}
+\sum_{j=1}^J
+\frac{(\bar y_j-\mu)^2}{V_j}
+-c|\mu|
+\right\}.
+$$
+
+Consider the exponent
+
+$$
+-\frac{1}{2}
+\sum_{j=1}^J
+\frac{(\bar y_j-\mu)^2}{V_j}
+-c|\mu|.
+$$
+
+Expanding the square gives
+
+$$
+=
+-\frac{1}{2}
+\sum_{j=1}^J
+\frac{
+\bar y_j^2
+-2\bar y_j\mu
++\mu^2
+}{V_j}
+-c|\mu|.
+$$
+
+Thus,
+
+$$
+=
+-\frac{1}{2}
+\left[
+\sum_{j=1}^J\frac{\bar y_j^2}{V_j}
+-
+2\mu\sum_{j=1}^J\frac{\bar y_j}{V_j}
++
+\mu^2\sum_{j=1}^J\frac{1}{V_j}
+\right]
+-c|\mu|.
+$$
+
+The term
+
+$$
+\sum_{j=1}^J\frac{\bar y_j^2}{V_j}
+$$
+
+does not depend on $\mu$, and may therefore be absorbed into the
+constant of proportionality. Hence,
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\exp\left\{
+-\frac{1}{2}
+\left[
+\mu^2\sum_{j=1}^J\frac{1}{V_j}
+-
+2\mu\sum_{j=1}^J\frac{\bar y_j}{V_j}
+\right]
+\right\}
+\exp\{-c|\mu|\}.
+$$
+
+Now let
+
+$$
+A
+=
+\sum_{j=1}^J\frac{1}{V_j},
+$$
+
+and
+
+$$
+B
+=
+\sum_{j=1}^J\frac{\bar y_j}{V_j}.
+$$
+
+Then the quadratic expression in $\mu$ becomes
+
+$$
+A\mu^2-2B\mu.
+$$
+
+Completing the square in $\mu$,
+
+$$
+A\mu^2-2B\mu
+=
+A\left[
+\mu^2-\frac{2B}{A}\mu
+\right].
+$$
+
+Hence,
+
+$$
+A\mu^2-2B\mu
+=
+A\left[
+\left(
+\mu-\frac{B}{A}
+\right)^2
+-
+\left(
+\frac{B}{A}
+\right)^2
+\right].
+$$
+
+Therefore,
+
+$$
+A\mu^2-2B\mu
+=
+A\left(
+\mu-\frac{B}{A}
+\right)^2
+-
+\frac{B^2}{A}.
+$$
+
+Substituting this back into the posterior gives
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\exp\left\{
+-\frac{A}{2}
+\left(
+\mu-\frac{B}{A}
+\right)^2
++
+\frac{B^2}{2A}
+\right\}
+\exp\{-c|\mu|\}.
+$$
+
+Since
+
+$$
+\frac{B^2}{2A}
+$$
+
+does not depend on $\mu$, it may also be absorbed into the constant
+of proportionality. Thus,
+
+$$
+\pi(\mu\mid\mathbf y)
+\propto
+\exp\left\{
+-\frac{A}{2}
+\left(
+\mu-\frac{B}{A}
+\right)^2
+\right\}
+\exp\{-c|\mu|\}.
+$$
+
+Now define
+
+$$
+v
+=
+\frac{1}{A}
+=
+\left(
+\sum_{j=1}^J\frac{1}{V_j}
+\right)^{-1},
+$$
+
+and
+
+$$
+m
+=
+\frac{B}{A}
+=
+\frac{
+\displaystyle\sum_{j=1}^J\frac{\bar y_j}{V_j}
+}{
+\displaystyle\sum_{j=1}^J\frac{1}{V_j}
+}.
+$$
+
+Since $A=1/v$, we have
+
+$$
+-\frac{A}{2}
+\left(
+\mu-\frac{B}{A}
+\right)^2
+=
+-\frac{(\mu-m)^2}{2v}.
+$$
+
+Hence,
+
+$$
+\boxed{
+\pi(\mu\mid\mathbf y)
+\propto
+\exp\left\{
+-\frac{(\mu-m)^2}{2v}
+\right\}
+\exp\{-c|\mu|\}
+}
+$$
+
+where
+
+$$
+\boxed{
+v
+=
+\left(
+\sum_{j=1}^J\frac{1}{V_j}
+\right)^{-1}
+}
+$$
+
+and
+
+$$
+\boxed{
+m
+=
+\frac{
+\displaystyle\sum_{j=1}^J\frac{\bar y_j}{V_j}
+}{
+\displaystyle\sum_{j=1}^J\frac{1}{V_j}
+}.
+}
+$$
+
+
+# Question 3
+
+### (a)
+
+The simplest distribution to sample from, which we know how to sample from, which is similar to $\pi(\mu\mid \mathbf{y})$, would be given by the $N(m,v)$ distribution, where $m$ and $v$ are as per above. Moreover, $e^{-c|\mu|}$ is bounded above by 1, and hence the candidate distribution will be above the target distribution. 
+
+### (b)
+
+We recall that: 
+
+$$
+\gamma(\mu)=\frac{f(\mu)}{C\,h(\mu)}.
+$$
+
+Where
+
+$$
+f(\mu)=\pi^{\text{NORM}}(\mu\mid \mathbf{y})=K\,\pi(\mu\mid \mathbf{y}),
+$$
+
+that is the normalised version of the marginal posterior of $\mu$. And
+
+$$
+h(\mu)
+=
+\frac{1}{\sqrt{2\pi v}}
+\exp\left(
+-\frac{1}{2v}(\mu-m)^2
+\right),
+$$
+
+and
+
+$$
+C=\max_{\mu}\frac{f(\mu)}{h(\mu)}.
+$$
+
+It follows that: 
+
+$$
+\frac{f(\mu)}{h(\mu)}
+=
+\frac{
+K\exp\left(-\frac{(\mu-m)^2}{2v}\right)\exp(-c|\mu|)
+}{
+\frac{1}{\sqrt{2\pi v}}
+\exp\left(-\frac{1}{2v}(\mu-m)^2\right)
+}.
+$$
+
+Hence,
+
+$$
+C
+=
+\max_{\mu}
+\frac{
+K\exp\left(-\frac{(\mu-m)^2}{2v}\right)\exp(-c|\mu|)
+}{
+\frac{1}{\sqrt{2\pi v}}
+\exp\left(-\frac{1}{2v}(\mu-m)^2\right)
+},
+$$
+
+so that
+
+$$
+C
+=
+K\sqrt{2\pi v}\exp(-c|\mu|).
+$$
+
+We notice that for $c=0.25$, which we are given,
+
+$$
+\exp(-c|\mu|)\le 1,
+$$
+
+since
+
+$$
+|\mu|\ge 0,
+$$
+
+and thus
+
+$$
+-|\mu|\le 0,
+$$
+
+which implies
+
+$$
+-c|\mu|\le 0,
+$$
+
+and thus: 
+
+$$
+e^{-c|\mu|}\le e^0 = 1.
+$$
+
+Hence, for $\mu=0$, we have that: 
+
+$$
+C=K\sqrt{2\pi v}.
+$$
+
+Hence,
+
+$$
+\gamma(\mu)
+=
+\frac{
+K\exp\left(-\frac{(\mu-m)^2}{2v}\right)\exp(-c|\mu|)
+}{
+K\sqrt{2\pi v}
+\cdot
+\frac{1}{\sqrt{2\pi v}}
+\exp\left(-\frac{(\mu-m)^2}{2v}\right)
+}.
+$$
+
+Therefore,
+
+$$
+\gamma(\mu)
+=
+\exp(-c|\mu|)
+=
+\exp(-0.25|\mu|),
+$$
+
+since we are given that $c=0.25$.
+
+### (c)
+
+```{r}
+# we draw at least 5000 samples from the marginal posterior, 
+# using the acceptance-rejection algorithm. 
+# we recall that it is given by:
+# for each sample: 
+# - sample u from U(0,1)
+# - sample mu* from h(mu) which N(m,v) distribution. 
+# - if u <= gamma(mu*) = exp(-0.25|mu*|):
+#       accept mu*
+#   else: reject
+
+ar = function(samples=5000){
+  
+  # we need to find m and v from the data:
+  sigma_squared = 4
+  tau_squared = 2.25
+  c = 0.25
+  # array of means: 
+  ybar_array = table_summary$mean 
+  V_j_array = tau_squared + 
+    sigma_squared/(table_summary$num_bottles_per_machine)
+  
+  # from question 2, we find the values of m and v from the data: 
+  v = sum(1/V_j_array)^-1
+  m = (sum(ybar_array/V_j_array))/(sum(1/V_j_array))
+  
+  # create an empty array of nothing to store the values of 
+  # mu* that we will accept: 
+  mu_array = numeric(0)
+  
+  # for the empirical acceptance rate, we need the count 
+  # of accepted values, and count of generated values: 
+  accepted_value_count = 0
+  generated_value_count = 0
+  
+  # while the length of the mu* array is less than 5000 values: 
+  while (length(mu_array)<samples){
+    # update the generated count:
+    generated_value_count = generated_value_count + 1 
+    # generate uniform: 
+    uniform = runif(1,0,1) 
+    # draw mu* from candidate distribution with params as per above: 
+    candidate = rnorm(1, m, sqrt(v)) 
+    # if u<= gamma(mu*), then update mu_array with accepted value: 
+    if (uniform <= exp(-c*abs(candidate))) {  
+      mu_array = c(mu_array, candidate)
+      # update the accepted count: 
+      accepted_value_count = accepted_value_count + 1 
+    } # else continue
+  } 
+  
+  # return a list of draws, and the 
+  # empirical acceptance rate, as desired: 
+  return (list(
+    draws = mu_array,
+    empirical_acceptance_rate = 
+      accepted_value_count/generated_value_count
+  ))
+}
+
+```
+
+### d (i)
+
+Now from the code above, we call ar() to generate our 5000 draws, from the marginal posterior distribution of $\mu$:
+
+``` {r}
+# we set the seed here in order to reproduce results: 
+set.seed(888) 
+draws = ar(samples=5000)$draws
+```
+We then estimate the marginal posterior expectation, $E[\mu \mid \mathbf{y}]$, which is calculated as: 
+$$
+E[\mu \mid \mathbf{y}]
+\approx
+\frac{1}{N}\sum_{i=1}^{N}\mu^{(i)},
+$$
+
+where $N=5000$ and $\mu^{(i)}$ denotes the $i$-th accepted draw from the marginal posterior distribution.
+
+``` {r}
+marginal_posterior_expectation = sum(draws)/length(draws)
+marginal_posterior_expectation
+```
+We also estimate $\operatorname{Var}(\mu \mid \mathbf{y})$
+First, we estimate the second moment $E[X^2]$, where $X=\mu \mid \mathbf{y}$:
+
+$$
+E[X^2]
+\approx
+\frac{1}{N}\sum_{i=1}^{N}\left(\mu^{(i)}\right)^2.
+$$
+```{r}
+second_moment = sum(draws^2)/length(draws)
+```
+We then use
+$$
+E[X^2]-\left(E[X]\right)^2.
+$$ 
+
+```{r}
+marginal_posterior_variance = second_moment - marginal_posterior_expectation^2
+marginal_posterior_variance
+```
+
+### d (ii)
+
+to find the 95% posterior credible interval for $\mu$, we find the 2.5% quantile and 97.5% quantile, respectively: 
+
+```{r}
+credibility_interval = quantile(draws, probs= c(0.025, 0.975))
+credibility_interval
+```
+Thus, the (95%) posterior credible interval is given by the interval between these two posterior quantiles above. 
+
+### d (iii)
+
+To estimate $P(\mu > 0 \mid \mathbf{y})$, we calculate the proportion of posterior draws for which $\mu>0$:
+``` {r}
+num_samples_greater_than_zero = sum(draws>0)
+Prob_greater_zero = num_samples_greater_than_zero/length(draws)
+Prob_greater_zero
+```
+Similarly, to estimate $P(|\mu| < 0.5 \mid \mathbf{y})$, we calculate the proportion of posterior draws lying between (-0.5) and (0.5):
+```{r}
+num_samples_interval = sum(draws<0.5 & draws>-0.5)
+prob_in_interval = num_samples_interval/length(draws)
+prob_in_interval
+```
+
+### d (iv)
+
+```{r}
+#| echo: false
+#| fig-cap: "Marginal posterior distribution of the population mean deviation, $\\mu$, based on 5,000 posterior draws."
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-align: center
+
+hist(
+  draws, probability = TRUE, 
+  xlab = expression("Mean deviation across population of filling machines, " * mu),
+  ylab = "Density", 
+  main = expression("Marginal Posterior Distribution of " * mu ~ "|" ~ y),
+  col = "lightblue",
+  border = "white"
+)
+lines(density(draws),
+      lwd = 2,
+      col = "navy")
+```
+From the above results, we note the following: firstly, the expected value of the mean deviation across the population of the seven filling machines is approximately $0.315$ml. This indicates the posterior distribution is centred around $0.3$ml (slightly above zero), suggesting a tendency towards overfilling bottles at the population level. This is supported by the posterior density plot above. Moreover, we have that $\Pr(\mu>0 \mid \mathbf{y}) \approx 0.714$, meaning that there is $71.4\%$ posterior probability that the machine population tends to overfill on average. 
+
+We also note that $\Pr(|\mu|<0.5 \mid \mathbf{y}) = 0.56$. That is to say that there is $56\%$ posterior probability that the machine population average deviation is less than $0.5$ml from the target. This is relevant since $\mu$ close to $0$ indicates that the population filling process is well calibrated overall. 
+
+The $95\%$ posterior credibility interval for $\mu$ is approximately $(-0.817, 1.473)$ml. Since this is reasonably wide, and contains negative, $0$ and positive values, there is still reasonable posterior uncertainty that the population of machines systematically underfills or overfills, even though the posterior gives more probability on positive values of $\mu$ (which we see from the plot above, as well as $\Pr(\mu>0 \mid \mathbf{y}) = 0.714$). 
+
+These results are relevant because for inference on each individual machine mean, the population-posterior for $\mu$ helps pull the machine-specific means toward the population mean deviation, depending on the size of the sample for each machine.
+
+# Question 4
+
+### (a)
+
+We have: 
+
+$$
+\pi(\theta_j \mid \mu, \mathbf{y})
+\propto
+\prod_{i=1}^{n_j}
+\exp\left\{
+-\frac{1}{2\sigma^2}(y_{ij}-\theta_j)^2
+\right\}
+\cdot
+\exp\left\{
+-\frac{1}{2\tau^2}(\theta_j-\mu)^2
+\right\}.
+$$
+
+Thus,
+
+$$
+\pi(\theta_j \mid \mu, \mathbf{y})
+\propto
+\exp\left\{
+-\frac{1}{2\sigma^2}
+\sum_{i=1}^{n_j}(y_{ij}-\theta_j)^2
+-\frac{1}{2\tau^2}(\theta_j-\mu)^2
+\right\}.
+$$
+
+Consider: 
+
+$$
+\sum_{i=1}^{n_j}(y_{ij}-\theta_j)^2.
+$$
+
+Expanding, we have: 
+
+$$
+\sum_{i=1}^{n_j}
+\left(
+y_{ij}^2
+-
+2y_{ij}\theta_j
++
+\theta_j^2
+\right),
+$$
+
+and hence: 
+
+$$
+\sum_{i=1}^{n_j}(y_{ij}-\theta_j)^2
+=
+\sum_{i=1}^{n_j}y_{ij}^2
+-
+2\theta_j\sum_{i=1}^{n_j}y_{ij}
++
+n_j\theta_j^2.
+$$
+
+Since,
+
+$$
+\sum_{i=1}^{n_j}y_{ij}
+=
+n_j\bar{y}_j,
+$$
+
+we obtain: 
+
+$$
+\sum_{i=1}^{n_j}(y_{ij}-\theta_j)^2
+=
+\sum_{i=1}^{n_j}y_{ij}^2
+-
+2\theta_j\bar{y}_j n_j
++
+n_j\theta_j^2.
+$$
+
+Dropping terms not dependent on $\theta_j$, we obtain: 
+
+$$
+\pi(\theta_j \mid \mu, \mathbf{y})
+\propto
+\exp\left\{
+-\frac{1}{2\sigma^2}
+\left(
+n_j\theta_j^2
+-
+2\theta_j\bar{y}_j n_j
+\right)
+-
+\frac{1}{2\tau^2}
+(\theta_j-\mu)^2
+\right\}.
+$$
+
+Similarly, considering
+
+$$
+(\theta_j-\mu)^2,
+$$
+
+we have
+
+$$
+(\theta_j-\mu)^2
+=
+\theta_j^2
+-
+2\theta_j\mu
++
+\mu^2.
+$$
+
+Dropping the $\mu^2$ term, we have that: 
+
+$$
+\pi(\theta_j \mid \mu, \mathbf{y})
+\propto
+\exp\left\{
+-\frac{1}{2\sigma^2}
+\left(
+n_j\theta_j^2
+-
+2\theta_j\bar{y}_j n_j
+\right)
+-
+\frac{1}{2\tau^2}
+\left(
+\theta_j^2
+-
+2\theta_j\mu
+\right)
+\right\}.
+$$
+
+Dropping the subscript $j$ for simplicity, consider: 
+
+$$
+-\frac{1}{2\sigma^2}
+\left(
+n\theta^2
+-
+2\theta\bar{y}n
+\right)
+-
+\frac{1}{2\tau^2}
+\left(
+\theta^2
+-
+2\theta\mu
+\right).
+$$
+
+Collecting terms in $\theta$, we obtain: 
+
+$$
+-\frac{1}{2}
+\left(
+\frac{n}{\sigma^2}
++
+\frac{1}{\tau^2}
+\right)\theta^2
++
+\left(
+\frac{n\bar{y}}{\sigma^2}
++
+\frac{\mu}{\tau^2}
+\right)\theta.
+$$
+
+Let
+
+$$
+A
+=
+\frac{n}{\sigma^2}
++
+\frac{1}{\tau^2},
+$$
+
+and
+
+$$
+B
+=
+\frac{n\bar{y}}{\sigma^2}
++
+\frac{\mu}{\tau^2}.
+$$
+
+Then
+
+$$
+-\frac{A}{2}\theta^2
++
+B\theta.
+$$
+
+Factoring out $-\frac{A}{2}$ yields: 
+
+$$
+-\frac{A}{2}
+\left(
+\theta^2
+-
+\frac{2B}{A}\theta
+\right).
+$$
+
+Completing the square,
+
+$$
+-\frac{A}{2}
+\left[
+\left(
+\theta-\frac{B}{A}
+\right)^2
+-
+\frac{B^2}{A^2}
+\right].
+$$
+
+Thus,
+
+$$
+-\frac{A}{2}
+\left(
+\theta-\frac{B}{A}
+\right)^2
++
+\frac{B^2}{2A}.
+$$
+
+Dropping the term which does not depend on $\theta$, we have: 
+
+$$
+\pi(\theta_j \mid \mu, \mathbf{y})
+\propto
+\exp\left\{
+-\frac{A}{2}
+\left(
+\theta-\frac{B}{A}
+\right)^2
+\right\}.
+$$
+
+This is the kernel of a Normal distribution with mean
+
+$$
+\frac{B}{A},
+$$
+
+and variance
+
+$$
+\frac{1}{A}.
+$$
+
+Therefore,
+
+$$
+\theta_j \mid \mu, \mathbf{y}
+\sim
+N\left(
+\frac{
+\frac{n_j\bar{y}_j}{\sigma^2}
++
+\frac{\mu}{\tau^2}
+}{
+\frac{n_j}{\sigma^2}
++
+\frac{1}{\tau^2}
+},
+\;
+\frac{1}{
+\frac{n_j}{\sigma^2}
++
+\frac{1}{\tau^2}
+}
+\right),
+$$
+
+as desired.
+
+### (b)
+
+Firstly, we simplify $E(\theta_j \mid \mu, \mathbf{y})$ to obtain: 
+
+$$
+E(\theta_j \mid \mu, \mathbf{y})
+=
+\frac{n_j\tau^2}{n_j\tau^2+\sigma^2}\bar{y}_j
++
+\frac{\sigma^2}{n_j\tau^2+\sigma^2}\mu.
+$$
+
+That is, separating the posterior mean into the sample mean, $\bar{y}_j$, for each filling machine, and $\mu$, the population mean. The two weights sum to one, since
+
+$$
+\frac{n_j\tau^2}{n_j\tau^2+\sigma^2}
++
+\frac{\sigma^2}{n_j\tau^2+\sigma^2}
+=
+\frac{n_j\tau^2+\sigma^2}{n_j\tau^2+\sigma^2}
+=
+1.
+$$
+
+Thus, the posterior mean is a weighted average of the machine-specific sample mean and the population mean.
+
+We can see that when machine $j$ has a large number of samples (observed bottles), that is, $n_j$ is high, then the posterior mean will be dominated by the sample mean $\bar{y}_j$ term, since $\frac{\sigma^2}{n_j\tau^2+\sigma^2}$ will become very small as $n_j$ grows large. Whereas with smaller sample sizes for each machine $j$, the posterior mean will be weighted between both the sample mean and the population mean, and for very few samples for that specific group, the posterior mean will be pulled toward the population mean. This is what is known as shrinkage within the hierarchical model.
+
+In this case, since machines 1, 2 and 3 have very few observed bottles, their posterior means will be pulled more strongly towards the population mean.
+
+### (c)
+
+```{r}
+# we obtain our 5000 draws as in question (3) above:
+mu_draws = draws
+
+# we create a matrix which is 5000x7, to hold 5000 samples for each machine: 
+sample_array = matrix(0, nrow=length(draws), 
+                      ncol = max(table_summary$Machine_number)) 
+sigma_squared = 4
+tau_squared = 2.25
+set.seed(888)
+
+# then for each mu[i], we use that as our sample mean for the theta_j draws, 
+# where we loop through each 1-7 machines: 
+for (j in 1:max(table_summary$Machine_number)){
+  # find the number of bottles per machine: 
+  n_j = table_summary$num_bottles_per_machine[j] 
+  y_bar_j = table_summary$mean[j] # obtain sample mean per machine
+   # obtain variance value as per above formula: 
+  variance_value = 1/((n_j/sigma_squared) + (1/tau_squared)) 
+  
+  for (i in 1:length(draws)) {
+  # we compute expected value and then update our 
+  # sample array for each observation for that particular machine: 
+  expected_value = 
+    ((n_j*tau_squared)/(n_j*tau_squared + sigma_squared))*(y_bar_j) +
+    ((sigma_squared)/(n_j*tau_squared +   sigma_squared))*(mu_draws[i])
+  
+  sample_array[i,j] = rnorm(1, mean = expected_value, 
+                            sd = sqrt(variance_value))
+}
+}
+```
+We note that the posterior means for each machine, where the index $j$ is the posterior mean that machine $j$, are given in the following array: 
+```{r}
+
+posterior_machine_means = colMeans(sample_array)
+posterior_machine_means
+```
+
+``` {r}
+#| echo: false
+#| fig-cap: "Shrinkage of per-machine posterior means toward the population posterior mean."
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-align: center
+plot(
+  1:7,
+  table_summary$mean,
+  pch = 19,
+  col = "navy",
+  ylim = range(c(table_summary$mean, posterior_machine_means)),
+  xlab = "Machine",
+  ylab = "Mean Deviation from Target (ml)",
+  main = "Shrinkage of Machine-Specific Means"
+)
+
+points(
+  1:7,posterior_machine_means,pch = 19,
+  col = "lightblue"
+)
+
+abline(
+  h = marginal_posterior_expectation,
+  col = "forestgreen",lty = 2, lwd = 2
+)
+
+legend(
+  "topright",
+  legend = c(
+    "Sample Mean",
+    "Posterior Mean",
+    "Population Posterior Mean"
+  ),
+  col = c("navy", "lightblue", "forestgreen"),
+  pch = c(19, 19, NA),
+  lty = c(NA, NA, 2),
+  lwd = c(NA, NA, 2)
+)
+```
+We can see from above that machines 2 and 3, which have notably fewer bottles sampled compared to machines 5, 6 and 7, have posterior means which are pulled much more strongly toward the population mean from the sample mean, compared to the machines with more observations. We note that machine 1 already has its sample mean close to the population posterior mean and thus, even though it has the fewest number of observations, its pull is very little, since its sample mean is already close to the population posterior mean. Finally, we note that in all cases, the posterior mean is shrunk towards the population posterior mean compared to the sample mean. The magnitude of the shrinkage is just dependent on whether the sample mean is already close to the population mean, as well as the particular machine's sample size. 
+
+# Question 5
+
+### (a)
+
+We have that: 
+
+$$
+Y_{i,\text{new}} \mid \theta_{\text{new}}
+\sim
+N(\theta_{\text{new}},\sigma^2)
+$$
+
+and
+
+$$
+\theta_{\text{new}} \mid \mu
+\sim
+N(\mu,\tau^2).
+$$
+
+Thus,
+
+$$
+f(y_{i,\text{new}} \mid \mu)
+=
+\int_{\theta_{\text{new}}}
+f(y_{i,\text{new}} \mid \theta_{\text{new}})
+\pi(\theta_{\text{new}} \mid \mu)
+\, d\theta_{\text{new}}.
+$$
+
+Therefore,
+
+$$
+f(y_{i,\text{new}} \mid \mu)
+=
+\int_{\theta_{\text{new}}}
+\frac{1}{\sqrt{2\pi\sigma^2}}
+\exp\left\{
+-\frac{1}{2\sigma^2}
+(y_{i,\text{new}}-\theta_{\text{new}})^2
+\right\}
+\cdot
+\frac{1}{\sqrt{2\pi\tau^2}}
+\exp\left\{
+-\frac{1}{2\tau^2}
+(\theta_{\text{new}}-\mu)^2
+\right\}
+\, d\theta_{\text{new}}.
+$$
+
+Removing the subscripts for simplicity,
+
+$$
+=
+\int_{\theta}
+\frac{1}{\sqrt{2\pi\sigma^2}}
+\exp\left\{
+-\frac{1}{2\sigma^2}(y-\theta)^2
+\right\}
+\cdot
+\frac{1}{\sqrt{2\pi\tau^2}}
+\exp\left\{
+-\frac{1}{2\tau^2}(\theta-\mu)^2
+\right\}
+\, d\theta.
+$$
+
+Consider the exponent: 
+
+$$
+-\frac{1}{2\sigma^2}(y-\theta)^2
+-
+\frac{1}{2\tau^2}(\theta-\mu)^2.
+$$
+
+Expanding,
+
+$$
+-\frac{1}{2\sigma^2}
+\left(
+y^2-2y\theta+\theta^2
+\right)
+-
+\frac{1}{2\tau^2}
+\left(
+\theta^2-2\theta\mu+\mu^2
+\right).
+$$
+
+Thus,
+
+$$
+\left(
+-\frac{1}{2\sigma^2}
+-
+\frac{1}{2\tau^2}
+\right)\theta^2
++
+\left(
+\frac{y}{\sigma^2}
++
+\frac{\mu}{\tau^2}
+\right)\theta
+-
+\frac{1}{2\sigma^2}y^2
+-
+\frac{1}{2\tau^2}\mu^2.
+$$
+
+Letting
+
+$$
+A
+=
+\frac{1}{\sigma^2}
++
+\frac{1}{\tau^2},
+$$
+
+and
+
+$$
+B
+=
+\frac{y}{\sigma^2}
++
+\frac{\mu}{\tau^2},
+$$
+
+we have: 
+
+$$
+-\frac{A}{2}\theta^2
++
+B\theta
+-
+\frac{1}{2\sigma^2}y^2
+-
+\frac{1}{2\tau^2}\mu^2.
+$$
+
+Completing the square in terms of $\theta$,
+
+$$
+-\frac{A}{2}
+\left(
+\theta^2-\frac{2B}{A}\theta
+\right)
+-
+\frac{1}{2\sigma^2}y^2
+-
+\frac{1}{2\tau^2}\mu^2,
+$$
+
+which gives: 
+
+$$
+-\frac{A}{2}
+\left[
+\theta-\frac{B}{A}
+\right]^2
++
+\frac{B^2}{2A}
+-
+\frac{1}{2\sigma^2}y^2
+-
+\frac{1}{2\tau^2}\mu^2.
+$$
+
+Thus, we have: 
+
+$$
+f(y_{i,\text{new}} \mid \mu)
+=
+\frac{1}{\sqrt{2\pi\sigma^2}}
+\frac{1}{\sqrt{2\pi\tau^2}}
+\exp\left\{
+\frac{B^2}{2A}
+-
+\frac{1}{2\sigma^2}y^2
+-
+\frac{1}{2\tau^2}\mu^2
+\right\}
+\int_{\theta}
+\exp\left\{
+-\frac{A}{2}
+\left[
+\theta-\frac{B}{A}
+\right]^2
+\right\}
+\, d\theta.
+$$
+
+Since
+
+$$
+\int_{\theta}
+\exp\left\{
+-\frac{A}{2}
+\left[
+\theta-\frac{B}{A}
+\right]^2
+\right\}
+\, d\theta
+=
+\sqrt{\frac{2\pi}{A}},
+$$
+
+we obtain: 
+
+$$
+f(y_{i,\text{new}} \mid \mu)
+=
+\sqrt{\frac{2\pi}{A}}
+\cdot
+\frac{1}{\sqrt{2\pi\sigma^2}}
+\cdot
+\frac{1}{\sqrt{2\pi\tau^2}}
+\exp\left\{
+\frac{1}{2}
+\left(
+\frac{B^2}{A}
+-
+\frac{y^2}{\sigma^2}
+-
+\frac{\mu^2}{\tau^2}
+\right)
+\right\}.
+$$
+
+Now,
+
+$$
+A
+=
+\frac{\tau^2+\sigma^2}{\sigma^2\tau^2},
+$$
+
+and
+
+$$
+B
+=
+\frac{y\tau^2+\mu\sigma^2}{\sigma^2\tau^2}.
+$$
+
+Thus,
+
+$$
+\frac{B^2}{A}
+=
+\frac{
+(y\tau^2+\mu\sigma^2)^2
+}{
+(\tau^2+\sigma^2)(\sigma^2\tau^2)
+}.
+$$
+
+Hence, in the exponent,
+
+$$
+\frac{B^2}{A}
+-
+\frac{y^2}{\sigma^2}
+-
+\frac{\mu^2}{\tau^2}
+$$
+
+becomes
+
+$$
+\frac{
+(y\tau^2+\mu\sigma^2)^2
+}{
+(\tau^2+\sigma^2)(\sigma^2\tau^2)
+}
+-
+\frac{y^2}{\sigma^2}
+-
+\frac{\mu^2}{\tau^2}.
+$$
+
+Writing over a common denominator,
+
+$$
+=
+\frac{
+(y\tau^2+\mu\sigma^2)^2
+-
+(\tau^2+\sigma^2)
+(y^2\tau^2+\mu^2\sigma^2)
+}{
+(\tau^2+\sigma^2)(\sigma^2\tau^2)
+}.
+$$
+
+Expanding the numerator,
+
+$$
+=
+\frac{
+y^2\tau^4
++
+2y\mu\tau^2\sigma^2
++
+\mu^2\sigma^4
+-
+\left(
+y^2\tau^4
++
+y^2\sigma^2\tau^2
++
+\mu^2\sigma^2\tau^2
++
+\mu^2\sigma^4
+\right)
+}{
+(\tau^2+\sigma^2)(\sigma^2\tau^2)
+}.
+$$
+
+Therefore,
+
+$$
+=
+\frac{
+2y\mu\tau^2\sigma^2
+-
+\mu^2\sigma^2\tau^2
+-
+y^2\sigma^2\tau^2
+}{
+(\tau^2+\sigma^2)(\sigma^2\tau^2)
+}.
+$$
+
+Cancelling $\sigma^2\tau^2$,
+
+$$
+=
+\frac{
+2y\mu-\mu^2-y^2
+}{
+\tau^2+\sigma^2
+}.
+$$
+
+Since,
+
+$$
+2y\mu-\mu^2-y^2
+=
+-(y-\mu)^2,
+$$
+
+we obtain: 
+
+$$
+\frac{B^2}{A}
+-
+\frac{y^2}{\sigma^2}
+-
+\frac{\mu^2}{\tau^2}
+=
+-\frac{(y-\mu)^2}{\tau^2+\sigma^2}.
+$$
+
+Also,
+
+$$
+\sqrt{\frac{2\pi}{A}}
+\cdot
+\frac{1}{\sqrt{2\pi\sigma^2}}
+\cdot
+\frac{1}{\sqrt{2\pi\tau^2}}
+=
+\frac{1}{\sqrt{2\pi(\tau^2+\sigma^2)}}.
+$$
+
+Thus,
+
+$$
+f(y_{i,\text{new}} \mid \mu)
+=
+\frac{1}{\sqrt{2\pi(\tau^2+\sigma^2)}}
+\exp\left\{
+-\frac{1}{2}
+\frac{(y-\mu)^2}{\tau^2+\sigma^2}
+\right\}.
+$$
+
+Hence,
+
+$$
+Y_{i,\text{new}} \mid \mu
+\sim
+N(\mu,\tau^2+\sigma^2).
+$$
+
+### (b)
+
+We note that $Y_{i,\mathrm{new}} \mid \mu$ is the predictive distribution conditional on $\mu$. However, in the Bayesian setting, $\mu$ is unknown. Therefore, the posterior predictive distribution is obtained by integrating over the posterior distribution of $\mu$: 
+
+$$
+f(y_{i,\mathrm{new}} \mid \mathbf{y})
+=
+\int_{\mu}
+f(y_{i,\mathrm{new}} \mid \mu)\,
+\pi(\mu \mid \mathbf{y})
+\,d\mu.
+$$
+
+And then finding the expected value, since we already have $5000$ draws $\mu^{(1)},\ldots,\mu^{(5000)}$ from $\pi(\mu \mid \mathbf{y})$, we can approximate this similarly to Question 4 (c):
+
+```{r}
+# we obtain our 5000 draws as in question (3) above:
+mu_draws = draws
+
+sample_array = numeric(0)
+
+sigma_squared = 4
+tau_squared = 2.25
+set.seed(888)
+
+for (i in 1:length(draws)) {
+  
+  # sample one value from N(mu, tau^2 + sigma^2) 
+  # as per distribution found above: 
+  sampled_value = rnorm(1, mean = mu_draws[i], 
+                        sd = sqrt(sigma_squared + tau_squared)) 
+  
+  # add the sampled_value back to the sample_array: 
+  sample_array = c(sample_array, sampled_value) 
+}
+```
+The posterior predictive mean is given by $E[Y_{i,\mathrm{new}} \mid \mathbf{y}]$: 
+``` {r}
+posterior_predictive_mean = mean(sample_array)
+posterior_predictive_mean
+```
+
+``` {r}
+#| echo: false
+#| fig-cap: "Posterior predictive distribution for a new bottle deviation from the 500ml target."
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-align: center
+# visualising the density: 
+
+hist(
+  sample_array, probability = TRUE, 
+  xlab = expression("Deviation from 500ml Target (ml)"),
+  ylab = "Density", 
+  main = expression("Posterior Predictive Distribution for a New Bottle"),
+  col = "lightblue",
+  border = "white",
+  ylim = c(0, 0.18)
+)
+lines(density(sample_array),
+      lwd = 2,
+      col = "navy")
+```
+
+### (c)
+
+```{r}
+#| echo: false
+# we obtain our 5000 draws as in question (3) above:
+mu_draws = draws
+
+sigma_squared = 4
+tau_squared = 2.25
+set.seed(888)
+ybar_array = table_summary$mean # array of means
+V_j_array = tau_squared + sigma_squared/(table_summary$num_bottles_per_machine)
+  
+# from question 2, we find the values of m and v from the data: 
+  
+v = sum(1/V_j_array)^-1
+mu_hat = (sum(ybar_array/V_j_array))/(sum(1/V_j_array))
+
+
+# sample 5000 values from N(mu, tau^2 + sigma^2) as per distribution found above. 
+sampled_value = rnorm(5000, mean = mu_hat, sd = sqrt(sigma_squared + tau_squared)) 
+```
+
+``` {r}
+#| echo: false
+#| fig-cap: "Empirical Bayes predictive distribution for the deviation of a new bottle from the 500ml target."
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-align: center
+# visualising the density: 
+
+hist(
+  sampled_value, probability = TRUE, 
+  xlab = expression("Deviation from 500ml Target (ml)"),
+  ylab = "Density", 
+  main = expression("Empirical Bayes Predictive Distribution for a New Bottle"),
+  col = "lightblue",
+  border = "white",
+  ylim = c(0, 0.18)
+)
+lines(density(sampled_value),
+      lwd = 2,
+      col = "navy")
+
+```
+
+``` {r}
+#| echo: false
+#| fig-cap: "Comparison of the Bayesian posterior predictive density and the empirical Bayes predictive density for a new bottle deviation."
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-align: center
+# density for posterior predictive: 
+density_bayes = density(sample_array)
+
+# density for empirical Bayes predictive: 
+density_empirical = density(sampled_value)
+
+plot(
+  density_bayes,
+  lwd = 2,
+  col = "navy",
+  xlab = "Deviation from 500ml Target (ml)",
+  ylab = "Density",
+  main = "Posterior Predictive vs Empirical Bayes Predictive",
+  ylim = c(0, 0.18)
+)
+
+lines(
+  density_empirical,
+  lwd = 2,
+  col = "forestgreen",
+  lty = 2
+)
+
+legend(
+  "topright",
+  legend = c(
+    "Posterior Predictive",
+    "Empirical Bayes Predictive"
+  ),
+  col = c("navy", "forestgreen"),
+  lwd = 2,
+  lty = c(1, 2)
+)
+```
+We see from the above graph that the posterior predictive distribution and empirical Bayes predictive densities are quite similar to one another. This indicates that uncertainty in $\mu$ contributes little additional variation compared to the per-machine and per-bottle observation variation. We note that the posterior is slightly more dispersed since its density is slightly wider and its peak is slightly flatter and lower, compared to the empirical Bayes density. The reason for this is that the posterior density accounts for additional variability in $\mu$, while the empirical Bayes distribution treats the $\mu = \hat{\mu}$ as fixed.  
+
+\newpage
+
+# Appendix {.unnumbered}
+
+## R Code for Figures
+
+### Figure 1: 
+```{r}
+#| eval: false
+boxplot(
+  Y ~ Machine,
+  xlab = "Machine",
+  ylab = "Deviation from 500ml target (ml)",
+  main = "Boxplot for Bottle Deviations by Machine",
+  col = "lightblue",
+  border = "navy"
+)
+
+abline(h = 0,lty = 2,
+  col = "forestgreen",
+  lwd = 2
+)
+```
+### Figure 2: 
+```{r}
+#| eval: false
+
+hist(
+  draws, probability = TRUE, 
+  xlab = expression("Mean deviation across population of filling machines, " * mu),
+  ylab = "Density", 
+  main = expression("Marginal Posterior Distribution of " * mu ~ "|" ~ y),
+  col = "lightblue",
+  border = "white"
+)
+lines(density(draws),
+      lwd = 2,
+      col = "navy")
+```
+### Figure 3
+``` {r}
+#| eval: false
+plot(
+  1:7,
+  table_summary$mean,
+  pch = 19,
+  col = "navy",
+  ylim = range(c(table_summary$mean, posterior_machine_means)),
+  xlab = "Machine",
+  ylab = "Mean Deviation from Target (ml)",
+  main = "Shrinkage of Machine-Specific Means"
+)
+
+points(
+  1:7,posterior_machine_means,pch = 19,
+  col = "lightblue"
+)
+
+abline(
+  h = marginal_posterior_expectation,
+  col = "forestgreen",lty = 2, lwd = 2
+)
+
+legend(
+  "topright",
+  legend = c(
+    "Sample Mean",
+    "Posterior Mean",
+    "Population Posterior Mean"
+  ),
+  col = c("navy", "lightblue", "forestgreen"),
+  pch = c(19, 19, NA),
+  lty = c(NA, NA, 2),
+  lwd = c(NA, NA, 2)
+)
+```
+### Figure 4
+``` {r}
+#| eval: false
+# visualising the density: 
+
+hist(
+  sample_array, probability = TRUE, 
+  xlab = expression("Deviation from 500ml Target (ml)"),
+  ylab = "Density", 
+  main = expression("Posterior Predictive Distribution for a New Bottle"),
+  col = "lightblue",
+  border = "white",
+  ylim = c(0, 0.18)
+)
+lines(density(sample_array),
+      lwd = 2,
+      col = "navy")
+```
+### Figure 5
+``` {r}
+#| eval: false
+# visualising the density: 
+
+hist(
+  sampled_value, probability = TRUE, 
+  xlab = expression("Deviation from 500ml Target (ml)"),
+  ylab = "Density", 
+  main = expression("Empirical Predictive Distribution for a New Bottle"),
+  col = "lightblue",
+  border = "white",
+  ylim = c(0, 0.18)
+)
+lines(density(sampled_value),
+      lwd = 2,
+      col = "navy")
+```
+### Figure 6
+``` {r}
+#| eval: false
+# density for posterior predictive: 
+density_bayes = density(sample_array)
+
+# density for empirical Bayes predictive: 
+density_empirical = density(sampled_value)
+
+plot(
+  density_bayes,
+  lwd = 2,
+  col = "navy",
+  xlab = "Deviation from 500ml Target (ml)",
+  ylab = "Density",
+  main = "Posterior Predictive vs Empirical Bayes Predictive",
+  ylim = c(0, 0.18)
+)
+
+lines(
+  density_empirical,
+  lwd = 2,
+  col = "forestgreen",
+  lty = 2
+)
+
+legend(
+  "topright",
+  legend = c(
+    "Posterior Predictive",
+    "Empirical Bayes Predictive"
+  ),
+  col = c("navy", "forestgreen"),
+  lwd = 2,
+  lty = c(1, 2)
+)
+```
+\newpage
+
+# Bibliography {.unnumbered}
+
+Stangroom, J. (2026). *STA304XS Bayesian Analysis lectures*. University of Cape Town.  Notes taken during lectures by the author.
+
